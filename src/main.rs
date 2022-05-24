@@ -15,6 +15,24 @@ enum NestedElem {
     JsonString(usize),
 }
 
+fn expect_nesting(nesting: &mut Vec<NestedElem>, observed: NestedElem) -> Result<(), String> {
+    match nesting.pop() {
+        Some(elem) => {
+            if std::mem::discriminant(&elem) == std::mem::discriminant(&observed) {
+                return Ok(());
+            } else {
+                return Err(format!(
+                    "Found {:?} terminator but expected a {:?} terminator.",
+                    observed, elem
+                ));
+            }
+        }
+        _ => {
+            return Err(format!("Found {:?} terminator but expected EOF", observed));
+        }
+    }
+}
+
 fn main() -> Result<(), String> {
     let args = Cli::parse();
     let mut found_count = 0;
@@ -40,51 +58,18 @@ fn main() -> Result<(), String> {
                     depth_stack.push(NestedElem::JsonObject(pos));
                 }
                 Ok('}') => {
-                    if let Some(elem) = depth_stack.pop() {
-                        match elem {
-                            NestedElem::JsonObject(_) => {}
-                            _ => {
-                                return Err(format!(
-                                    "Expected {:?} terminator but found object terminator.",
-                                    elem
-                                ));
-                            }
-                        }
-                    }
+                    expect_nesting(&mut depth_stack, NestedElem::JsonObject(0))?;
                 }
                 Ok('[') => {
                     depth_stack.push(NestedElem::JsonArray(pos));
                 }
                 Ok(']') => {
-                    if let Some(elem) = depth_stack.pop() {
-                        match elem {
-                            NestedElem::JsonArray(_) => {}
-                            _ => {
-                                return Err(format!(
-                                    "Expected {:?} terminator but found array terminator.",
-                                    elem
-                                ));
-                            }
-                        }
-                    }
+                    expect_nesting(&mut depth_stack, NestedElem::JsonArray(0))?;
                 }
                 Ok('"') => {
                     if in_string {
-                        if let Some(elem) = depth_stack.pop() {
-                            match elem {
-                                NestedElem::JsonString(_) => {
-                                    in_string = false;
-                                }
-                                _ => {
-                                    return Err(format!(
-                                        "Expected {:?} terminator but found double-quote character",
-                                        elem
-                                    ))
-                                }
-                            };
-                        } else {
-                            return Err("Run for the hills. Logic has failed us all!".to_string());
-                        }
+                        expect_nesting(&mut depth_stack, NestedElem::JsonString(0))?;
+                        in_string = false;
                     } else {
                         in_string = true;
                         depth_stack.push(NestedElem::JsonString(pos));
